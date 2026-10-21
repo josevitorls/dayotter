@@ -128,9 +128,9 @@ describe("poll participation", () => {
       addedAttendees: [{ email: "sam@example.com" }, { name: "Pat", email: "pat@example.com" }],
     });
 
-    expect(email.text).toContain("Booked by: Alex <alex@example.com>");
-    expect(email.text).toContain("Also attending: sam@example.com, Pat <pat@example.com>");
-    expect(email.html).toContain("Booked by: Alex &lt;alex@example.com&gt;");
+    expect(email.text).toContain("Agendado por: Alex <alex@example.com>");
+    expect(email.text).toContain("Também participam: sam@example.com, Pat <pat@example.com>");
+    expect(email.html).toContain("Agendado por: Alex &lt;alex@example.com&gt;");
     expect(email.html).toContain("pat@example.com");
   });
 
@@ -146,8 +146,8 @@ describe("poll participation", () => {
       manageUrl: "https://example.com/booking/x",
     });
 
-    expect(email.text).not.toContain("Booked by:");
-    expect(email.text).not.toContain("Also attending:");
+    expect(email.text).not.toContain("Agendado por:");
+    expect(email.text).not.toContain("Também participam:");
   });
 
   it("fills the meeting-details placeholder with the generated link", () => {

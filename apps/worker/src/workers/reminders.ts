@@ -16,10 +16,10 @@ import { DateTime } from "luxon";
 /** Human label for how far out the meeting is, e.g. "in about 1 hour". */
 function leadLabel(start: Date): string {
   const mins = Math.round((start.getTime() - Date.now()) / 60_000);
-  if (mins >= 720) return "tomorrow";
-  if (mins >= 90) return `in about ${Math.round(mins / 60)} hours`;
-  if (mins >= 45) return "in about 1 hour";
-  return "soon";
+  if (mins >= 720) return "amanhã";
+  if (mins >= 90) return `em cerca de ${Math.round(mins / 60)} horas`;
+  if (mins >= 45) return "em cerca de 1 hora";
+  return "em breve";
 }
 
 /**

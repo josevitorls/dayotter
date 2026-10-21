@@ -50,7 +50,15 @@ export interface PollVoteUpdateData {
 }
 
 function fmt(date: Date, tz: string): string {
-  return DateTime.fromJSDate(date).setZone(tz).toFormat("cccc, LLLL d, yyyy · h:mm a (ZZZZ)");
+  return DateTime.fromJSDate(date)
+    .setZone(tz)
+    .setLocale("pt-BR")
+    .toFormat("cccc, d 'de' LLLL 'de' yyyy · HH:mm (ZZZZ)");
+}
+
+/** Short date for subjects: "22 de out., 15:00". */
+function short(date: Date, tz: string): string {
+  return DateTime.fromJSDate(date).setZone(tz).setLocale("pt-BR").toFormat("d 'de' LLL, HH:mm");
 }
 
 const ESC: Record<string, string> = {
@@ -102,8 +110,8 @@ function shell(
     ? `<a href="${esc(safeUrl(cta.url))}" style="display:inline-block;margin-top:12px;background:#4f46e5;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-size:14px;font-weight:500">${esc(cta.label)}</a>`
     : "";
   const footer = unsubscribeUrl
-    ? `<p style="margin:24px 0 0;color:#98a0ae;font-size:12px">Sent by DayOtter · <a href="${esc(safeUrl(unsubscribeUrl))}" style="color:#98a0ae;text-decoration:underline">Unsubscribe from tips</a></p>`
-    : `<p style="margin:24px 0 0;color:#98a0ae;font-size:12px">Sent by DayOtter</p>`;
+    ? `<p style="margin:24px 0 0;color:#98a0ae;font-size:12px">Enviado pela Agenda DZB · <a href="${esc(safeUrl(unsubscribeUrl))}" style="color:#98a0ae;text-decoration:underline">Cancelar inscrição</a></p>`
+    : `<p style="margin:24px 0 0;color:#98a0ae;font-size:12px">Enviado pela Agenda DZB</p>`;
   return `<div style="max-width:520px;margin:0 auto;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
     <h2 style="font-size:18px;color:#0c0e14;margin:0 0 14px">${heading}</h2>
     ${body}${button}
@@ -114,16 +122,16 @@ function shell(
 export function pollInvitation(d: PollInvitationData): Rendered {
   const note = d.message ? messageParagraphs(d.message) : [];
   return {
-    subject: `Vote on a time: ${d.pollTitle}`,
-    text: `${d.hostName} invited you to vote on a time for ${d.pollTitle}.\n\nThere are ${d.optionCount} proposed times.\n${d.message ? `\n${d.message}\n` : ""}Vote here: ${d.voteUrl}`,
+    subject: `Escolha um horário: ${d.pollTitle}`,
+    text: `${d.hostName} convidou você para escolher um horário para ${d.pollTitle}.\n\nHá ${d.optionCount} horários propostos.\n${d.message ? `\n${d.message}\n` : ""}Vote aqui: ${d.voteUrl}`,
     html: shell(
-      `${esc(d.hostName)} is finding a time`,
+      `${esc(d.hostName)} está buscando um horário`,
       [
-        `You were invited to vote on <strong>${esc(d.pollTitle)}</strong>.`,
-        `Choose what works for you from ${d.optionCount} proposed times.`,
+        `Você foi convidado a votar em <strong>${esc(d.pollTitle)}</strong>.`,
+        `Marque o que funciona para você entre ${d.optionCount} horários propostos.`,
         ...note,
       ],
-      { label: "Vote on times", url: d.voteUrl },
+      { label: "Votar nos horários", url: d.voteUrl },
     ),
   };
 }
@@ -132,20 +140,21 @@ export function pollVoteUpdate(d: PollVoteUpdateData): Rendered {
   const summaries = d.options.map((option) => {
     const when = DateTime.fromJSDate(option.startsAt)
       .setZone(d.timezone)
-      .toFormat("ccc, LLL d · h:mm a");
-    return `${when}: ${option.yes} yes, ${option.maybe} maybe, ${option.no} no`;
+      .setLocale("pt-BR")
+      .toFormat("ccc, d 'de' LLL · HH:mm");
+    return `${when}: ${option.yes} sim, ${option.maybe} talvez, ${option.no} não`;
   });
   return {
-    subject: `New vote: ${d.pollTitle}`,
-    text: `${d.voterName} (${d.voterEmail}) submitted or updated a vote on ${d.pollTitle}.\n\nPoll status: Open · ${d.participationLabel}\n\n${summaries.join("\n")}\n\nView results: ${d.resultsUrl}`,
+    subject: `Novo voto: ${d.pollTitle}`,
+    text: `${d.voterName} (${d.voterEmail}) votou ou atualizou o voto em ${d.pollTitle}.\n\nEnquete aberta · ${d.participationLabel}\n\n${summaries.join("\n")}\n\nVer resultados: ${d.resultsUrl}`,
     html: shell(
-      `New vote on ${esc(d.pollTitle)}`,
+      `Novo voto em ${esc(d.pollTitle)}`,
       [
-        `<strong>${esc(d.voterName)}</strong> (${esc(d.voterEmail)}) submitted or updated a vote.`,
-        `Poll status: <strong>Open</strong> · ${esc(d.participationLabel)}`,
+        `<strong>${esc(d.voterName)}</strong> (${esc(d.voterEmail)}) votou ou atualizou o voto.`,
+        `Enquete <strong>aberta</strong> · ${esc(d.participationLabel)}`,
         ...summaries.map((summary) => esc(summary)),
       ],
-      { label: "View poll results", url: d.resultsUrl },
+      { label: "Ver resultados", url: d.resultsUrl },
     ),
   };
 }
@@ -153,31 +162,31 @@ export function pollVoteUpdate(d: PollVoteUpdateData): Rendered {
 export function bookingConfirmation(d: BookingEmailData): Rendered {
   const when = fmt(d.start, d.timezone);
   const where = d.meetingUrl
-    ? `Join: ${d.meetingUrl}`
+    ? `Entrar: ${d.meetingUrl}`
     : d.location
-      ? `Location: ${d.location}`
+      ? `Local: ${d.location}`
       : "";
   const note = d.message ? messageParagraphs(d.message) : [];
   // Who booked it + anyone added alongside them (shown when known).
   const extras = [
-    d.booker ? `Booked by: ${personLabel(d.booker)}` : "",
+    d.booker ? `Agendado por: ${personLabel(d.booker)}` : "",
     d.addedAttendees && d.addedAttendees.length > 0
-      ? `Also attending: ${d.addedAttendees.map(personLabel).join(", ")}`
+      ? `Também participam: ${d.addedAttendees.map(personLabel).join(", ")}`
       : "",
   ].filter(Boolean);
   return {
-    subject: `Confirmed: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `Your booking is confirmed.\n\n${d.eventTitle}\nWith: ${d.hostName}\n${extras.join("\n")}${extras.length > 0 ? "\n" : ""}When: ${when}\n${where}\n${d.message ? `\n${d.message}\n` : ""}\nManage or cancel: ${d.manageUrl}`,
+    subject: `Confirmado: ${d.eventTitle} - ${short(d.start, d.timezone)}`,
+    text: `Sua reunião está confirmada.\n\n${d.eventTitle}\nCom: ${d.hostName}\n${extras.join("\n")}${extras.length > 0 ? "\n" : ""}Quando: ${when}\n${where}\n${d.message ? `\n${d.message}\n` : ""}\nRemarcar ou cancelar: ${d.manageUrl}`,
     html: shell(
-      "Your booking is confirmed 🎉",
+      "Reunião confirmada 🎉",
       [
-        `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}`,
+        `<strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)}`,
         ...extras.map((line) => esc(line)),
         `🗓 ${when}`,
         where ? `📍 ${esc(where)}` : "",
         ...note,
       ].filter(Boolean),
-      { label: "View booking", url: d.manageUrl },
+      { label: "Ver reunião", url: d.manageUrl },
     ),
   };
 }
@@ -229,29 +238,29 @@ export function guardrailAlert(d: GuardrailAlertData): Rendered {
 export function bookingReminder(d: BookingEmailData & { leadLabel: string }): Rendered {
   const when = fmt(d.start, d.timezone);
   return {
-    subject: `Reminder: ${d.eventTitle} ${d.leadLabel}`,
-    text: `Reminder - ${d.eventTitle} with ${d.hostName} is ${d.leadLabel}.\nWhen: ${when}\n${d.meetingUrl ? `Join: ${d.meetingUrl}` : ""}\n\nManage: ${d.manageUrl}`,
+    subject: `Lembrete: ${d.eventTitle} ${d.leadLabel}`,
+    text: `Lembrete - ${d.eventTitle} com ${d.hostName} é ${d.leadLabel}.\nQuando: ${when}\n${d.meetingUrl ? `Entrar: ${d.meetingUrl}` : ""}\n\nRemarcar ou cancelar: ${d.manageUrl}`,
     html: shell(
-      `Reminder: your meeting is ${esc(d.leadLabel)}`,
-      [`<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}`, `🗓 ${when}`],
+      `Lembrete: sua reunião é ${esc(d.leadLabel)}`,
+      [`<strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)}`, `🗓 ${when}`],
       d.meetingUrl
-        ? { label: "Join call", url: d.meetingUrl }
-        : { label: "View booking", url: d.manageUrl },
+        ? { label: "Entrar na chamada", url: d.meetingUrl }
+        : { label: "Ver reunião", url: d.manageUrl },
     ),
   };
 }
 
 export function bookingFollowUp(d: BookingEmailData): Rendered {
   return {
-    subject: `Thanks for meeting - ${d.eventTitle}`,
-    text: `Thanks for taking the time to meet about ${d.eventTitle} with ${d.hostName}. If anything came up or you'd like to follow up, just reply - or book another time: ${d.manageUrl}`,
+    subject: `Obrigado pela reunião - ${d.eventTitle}`,
+    text: `Obrigado pelo tempo na reunião ${d.eventTitle} com ${d.hostName}. Se surgir algo, é só responder - ou agende outro horário: ${d.manageUrl}`,
     html: shell(
-      "Thanks for meeting 🙌",
+      "Obrigado pela reunião 🙌",
       [
-        `Thanks for taking the time to meet about <strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}.`,
-        "If anything came up, just reply to this email - or grab another time below.",
+        `Obrigado pelo tempo na reunião <strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)}.`,
+        "Se surgir algo, é só responder este e-mail - ou escolher outro horário abaixo.",
       ],
-      { label: "Book another time", url: d.manageUrl },
+      { label: "Agendar outro horário", url: d.manageUrl },
     ),
   };
 }
@@ -259,15 +268,15 @@ export function bookingFollowUp(d: BookingEmailData): Rendered {
 /** Sent after a meeting the attendee missed - warm, with a rebook link. */
 export function bookingNoShowFollowUp(d: BookingEmailData): Rendered {
   return {
-    subject: `Sorry we missed you - ${d.eventTitle}`,
-    text: `We had ${d.eventTitle} with ${d.hostName} on the calendar but didn't get to connect. No worries - grab a new time whenever it suits you: ${d.manageUrl}`,
+    subject: `Sentimos sua falta - ${d.eventTitle}`,
+    text: `Tínhamos ${d.eventTitle} com ${d.hostName} na agenda, mas não conseguimos nos falar. Sem problema - escolha um novo horário quando quiser: ${d.manageUrl}`,
     html: shell(
-      "Sorry we missed you",
+      "Sentimos sua falta",
       [
-        `We had <strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)} on the calendar but didn't get to connect.`,
-        "No worries at all - grab a new time whenever it suits you.",
+        `Tínhamos <strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)} na agenda, mas não conseguimos nos falar.`,
+        "Sem problema - escolha um novo horário quando for melhor para você.",
       ],
-      { label: "Pick a new time", url: d.manageUrl },
+      { label: "Escolher novo horário", url: d.manageUrl },
     ),
   };
 }
@@ -275,41 +284,41 @@ export function bookingNoShowFollowUp(d: BookingEmailData): Rendered {
 export function bookingRescheduled(d: BookingEmailData): Rendered {
   const when = fmt(d.start, d.timezone);
   const where = d.meetingUrl
-    ? `Join: ${d.meetingUrl}`
+    ? `Entrar: ${d.meetingUrl}`
     : d.location
-      ? `Location: ${d.location}`
+      ? `Local: ${d.location}`
       : "";
-  const note = d.reason ? `Reason: ${d.reason}` : "";
+  const note = d.reason ? `Motivo: ${d.reason}` : "";
   return {
-    subject: `Rescheduled: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `Your booking has been moved to a new time.\n\n${d.eventTitle} with ${d.hostName}\nNew time: ${when}\n${where}${note ? `\n\n${note}` : ""}\n\nManage: ${d.manageUrl}`,
+    subject: `Remarcado: ${d.eventTitle} - ${short(d.start, d.timezone)}`,
+    text: `Sua reunião mudou de horário.\n\n${d.eventTitle} com ${d.hostName}\nNovo horário: ${when}\n${where}${note ? `\n\n${note}` : ""}\n\nRemarcar ou cancelar: ${d.manageUrl}`,
     html: shell(
-      "Your booking was rescheduled",
+      "Reunião remarcada",
       [
-        `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)} has a new time:`,
+        `<strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)} tem novo horário:`,
         `🗓 ${when}`,
         where ? `📍 ${esc(where)}` : "",
         note ? `💬 ${esc(note)}` : "",
       ].filter(Boolean),
-      { label: "View booking", url: d.manageUrl },
+      { label: "Ver reunião", url: d.manageUrl },
     ),
   };
 }
 
 export function bookingRunningLate(d: BookingEmailData & { minutes?: number }): Rendered {
-  const late = d.minutes ? `about ${d.minutes} minutes late` : "running a few minutes late";
+  const late = d.minutes ? `cerca de ${d.minutes} minutos atrasado` : "alguns minutos atrasado";
   const when = fmt(d.start, d.timezone);
   return {
-    subject: `Running late: ${d.eventTitle}`,
-    text: `Heads up - ${d.hostName} is ${late} for ${d.eventTitle} (${when}). Thanks for your patience.${d.meetingUrl ? `\nJoin: ${d.meetingUrl}` : ""}`,
+    subject: `Atraso: ${d.eventTitle}`,
+    text: `Aviso - ${d.hostName} está ${late} para ${d.eventTitle} (${when}). Obrigado pela paciência.${d.meetingUrl ? `\nEntrar: ${d.meetingUrl}` : ""}`,
     html: shell(
-      "A quick heads-up ⏳",
+      "Um aviso rápido ⏳",
       [
-        `<strong>${esc(d.hostName)}</strong> is ${esc(late)} for <strong>${esc(d.eventTitle)}</strong>.`,
+        `<strong>${esc(d.hostName)}</strong> está ${esc(late)} para <strong>${esc(d.eventTitle)}</strong>.`,
         `🗓 ${when}`,
-        "Thanks for your patience - they'll be with you shortly.",
+        "Obrigado pela paciência - já já começamos.",
       ],
-      d.meetingUrl ? { label: "Join call", url: d.meetingUrl } : undefined,
+      d.meetingUrl ? { label: "Entrar na chamada", url: d.meetingUrl } : undefined,
     ),
   };
 }
@@ -318,9 +327,9 @@ export function bookingMessage(d: BookingEmailData & { body: string }): Rendered
   const when = fmt(d.start, d.timezone);
   return {
     subject: `Re: ${d.eventTitle}`,
-    text: `${d.body}\n\n- ${d.hostName}\n\n${d.eventTitle}\nWhen: ${when}\nManage or reschedule: ${d.manageUrl}`,
-    html: shell(`About ${esc(d.eventTitle)}`, [esc(d.body), `- ${esc(d.hostName)}`, `🗓 ${when}`], {
-      label: "View or reschedule",
+    text: `${d.body}\n\n- ${d.hostName}\n\n${d.eventTitle}\nQuando: ${when}\nRemarcar ou cancelar: ${d.manageUrl}`,
+    html: shell(`Sobre ${esc(d.eventTitle)}`, [esc(d.body), `- ${esc(d.hostName)}`, `🗓 ${when}`], {
+      label: "Ver ou remarcar",
       url: d.manageUrl,
     }),
   };
@@ -333,16 +342,16 @@ export function bookingMessage(d: BookingEmailData & { body: string }): Rendered
 export function bookingRequested(d: BookingEmailData): Rendered {
   const when = fmt(d.start, d.timezone);
   return {
-    subject: `Request sent: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `Thanks - your request has been sent.\n\n${d.eventTitle} with ${d.hostName}\nRequested: ${when}\n\n${d.hostName} will review it; you'll get a confirmation email the moment it's approved.\n\nView or withdraw: ${d.manageUrl}`,
+    subject: `Pedido enviado: ${d.eventTitle} - ${short(d.start, d.timezone)}`,
+    text: `Obrigado - seu pedido foi enviado.\n\n${d.eventTitle} com ${d.hostName}\nHorário pedido: ${when}\n\n${d.hostName} vai analisar; você recebe a confirmação assim que for aprovado.\n\nVer ou desistir: ${d.manageUrl}`,
     html: shell(
-      "Your request has been sent ✋",
+      "Seu pedido foi enviado ✋",
       [
-        `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)}`,
+        `<strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)}`,
         `🗓 ${when}`,
-        `This event needs ${esc(d.hostName)}'s approval. We'll email you the moment it's confirmed - nothing is on the calendar yet.`,
+        `Esta reunião precisa da aprovação de ${esc(d.hostName)}. Avisaremos por e-mail assim que for confirmada - ainda não está na agenda.`,
       ],
-      { label: "View request", url: d.manageUrl },
+      { label: "Ver pedido", url: d.manageUrl },
     ),
   };
 }
@@ -354,48 +363,48 @@ export function bookingRequested(d: BookingEmailData): Rendered {
 export function newBookingRequest(d: BookingEmailData): Rendered {
   const when = fmt(d.start, d.timezone);
   return {
-    subject: `Approve? ${d.eventTitle} - ${d.attendeeName}`,
-    text: `${d.attendeeName} requested ${d.eventTitle}.\nWhen: ${when}\n\nApprove or decline it: ${d.manageUrl}`,
+    subject: `Aprovar? ${d.eventTitle} - ${d.attendeeName}`,
+    text: `${d.attendeeName} pediu ${d.eventTitle}.\nQuando: ${when}\n\nAprove ou recuse: ${d.manageUrl}`,
     html: shell(
-      "New booking request",
+      "Novo pedido de reunião",
       [
-        `<strong>${esc(d.attendeeName)}</strong> requested <strong>${esc(d.eventTitle)}</strong>.`,
+        `<strong>${esc(d.attendeeName)}</strong> pediu <strong>${esc(d.eventTitle)}</strong>.`,
         `🗓 ${when}`,
-        "It's on hold until you approve or decline it.",
+        "Fica em espera até você aprovar ou recusar.",
       ],
-      { label: "Review request", url: d.manageUrl },
+      { label: "Analisar pedido", url: d.manageUrl },
     ),
   };
 }
 
 /** Sent to the ATTENDEE when the host declines a pending request. */
 export function bookingDeclined(d: BookingEmailData): Rendered {
-  const note = d.reason ? `Reason: ${d.reason}` : "";
+  const note = d.reason ? `Motivo: ${d.reason}` : "";
   return {
-    subject: `Not confirmed: ${d.eventTitle}`,
-    text: `Unfortunately ${d.hostName} couldn't confirm your request for ${d.eventTitle} (${fmt(d.start, d.timezone)}).${note ? `\n\n${note}` : ""}\n\nYou're welcome to pick another time: ${d.manageUrl}`,
+    subject: `Não confirmado: ${d.eventTitle}`,
+    text: `Infelizmente ${d.hostName} não pôde confirmar seu pedido de ${d.eventTitle} (${fmt(d.start, d.timezone)}).${note ? `\n\n${note}` : ""}\n\nEscolha outro horário: ${d.manageUrl}`,
     html: shell(
-      "Your request wasn't confirmed",
+      "Seu pedido não foi confirmado",
       [
-        `Unfortunately ${esc(d.hostName)} couldn't confirm <strong>${esc(d.eventTitle)}</strong>.`,
-        `Requested: ${fmt(d.start, d.timezone)}`,
+        `Infelizmente ${esc(d.hostName)} não pôde confirmar <strong>${esc(d.eventTitle)}</strong>.`,
+        `Horário pedido: ${fmt(d.start, d.timezone)}`,
         note ? `💬 ${esc(note)}` : "",
       ].filter(Boolean),
-      { label: "Pick another time", url: d.manageUrl },
+      { label: "Escolher outro horário", url: d.manageUrl },
     ),
   };
 }
 
 export function bookingCancellation(d: BookingEmailData): Rendered {
-  const note = d.reason ? `Reason: ${d.reason}` : "";
+  const note = d.reason ? `Motivo: ${d.reason}` : "";
   return {
-    subject: `Cancelled: ${d.eventTitle} - ${DateTime.fromJSDate(d.start).setZone(d.timezone).toFormat("LLL d, h:mm a")}`,
-    text: `This booking has been cancelled.\n\n${d.eventTitle} with ${d.hostName}\nWas: ${fmt(d.start, d.timezone)}${note ? `\n\n${note}` : ""}`,
+    subject: `Cancelado: ${d.eventTitle} - ${short(d.start, d.timezone)}`,
+    text: `Esta reunião foi cancelada.\n\n${d.eventTitle} com ${d.hostName}\nEra: ${fmt(d.start, d.timezone)}${note ? `\n\n${note}` : ""}`,
     html: shell(
-      "Booking cancelled",
+      "Reunião cancelada",
       [
-        `<strong>${esc(d.eventTitle)}</strong> with ${esc(d.hostName)} has been cancelled.`,
-        `Was: ${fmt(d.start, d.timezone)}`,
+        `<strong>${esc(d.eventTitle)}</strong> com ${esc(d.hostName)} foi cancelada.`,
+        `Era: ${fmt(d.start, d.timezone)}`,
         note ? `💬 ${esc(note)}` : "",
       ].filter(Boolean),
     ),

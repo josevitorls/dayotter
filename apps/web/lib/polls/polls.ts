@@ -1,9 +1,14 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { logger } from "@dayotter/core";
 import { and, asc, eq, getDb, inArray, schema } from "@dayotter/db";
 import { bookingConfirmation, pollInvitation, pollVoteUpdate, sendEmail } from "@dayotter/emails";
 import { AUTO_CONFERENCE, LOCATION_LABELS } from "../booking/event-type-input";
-import { writeBookingToCalendar } from "../calendar/host-calendar";
+import { hostBookingPrefs, scheduleBookingReminders } from "../booking/reminders";
+import {
+  googleEmailsGuests,
+  withManageLink,
+  writeBookingToCalendar,
+} from "../calendar/host-calendar";
 import { env } from "../server/env";
 import { applyCalendarMessage, applyFinalizeMessage } from "./message-templates";
 
@@ -371,26 +376,94 @@ export async function finalizePoll(
     }
   }
   const attendees = [...attendeesByEmail.values()];
+  const hostTz = poll.host?.timezone ?? "UTC";
+  const appUrl = env.APP_URL;
+
+  // Turn the winning time into a REAL booking (reminders, reschedule/cancel
+  // links, bookings list, analytics). Bookings need an event type, so it's filed
+  // under the host's own event type that best matches the poll (same location
+  // and duration first). Without any event type it falls back to calendar-only.
+  let booking: typeof schema.bookings.$inferSelect | null = null;
+  try {
+    const owned = await db.query.eventTypes.findMany({
+      where: eq(schema.eventTypes.ownerId, hostId),
+    });
+    const score = (e: (typeof owned)[number]) =>
+      (e.location === poll.location ? 2 : 0) + (e.durationMinutes === duration ? 1 : 0) + (e.isActive ? 0.5 : 0);
+    const et = [...owned].sort((a, b) => score(b) - score(a))[0];
+    if (et) {
+      const locationType = poll.location && poll.location in LOCATION_LABELS ? poll.location : null;
+      const [row] = await db
+        .insert(schema.bookings)
+        .values({
+          organizationId: et.organizationId,
+          eventTypeId: et.id,
+          hostId,
+          title: poll.title,
+          description: poll.description,
+          startsAt: start,
+          endsAt: end,
+          timezone: hostTz,
+          status: "confirmed",
+          location: createConference ? null : (locationLabel ?? null),
+          locationType: locationType as typeof schema.bookings.$inferInsert.locationType,
+          uid: randomUUID(),
+          // The host picked this time knowingly from the poll results.
+          allowOverlap: true,
+        })
+        .returning();
+      booking = row ?? null;
+      if (booking && attendees.length > 0) {
+        await db.insert(schema.bookingAttendees).values(
+          attendees.map((a) => ({
+            bookingId: booking!.id,
+            email: a.email,
+            name: a.name,
+            timezone: hostTz,
+          })),
+        );
+      }
+    }
+  } catch (err) {
+    logger.error("poll finalize booking failed", { event: "poll_booking_failed", pollId, err });
+    booking = null;
+  }
+  const manageUrl = booking ? `${appUrl}/booking/${booking.uid}` : `${appUrl}/poll/${poll.token}`;
 
   // Add to the host's calendar (best-effort), inviting the confirmed guests. The
   // event carries the host's meeting details (Zoom link etc.) in the description
   // so the provider's own invite email is useful - the {details} placeholder is
   // filled with the location label because the generated link isn't known yet.
   const calendarMessage = applyCalendarMessage(message, locationLabel);
-  const description = [poll.description, calendarMessage].filter(Boolean).join("\n\n");
+  const description = withManageLink(
+    [poll.description, calendarMessage].filter(Boolean).join("\n\n"),
+    manageUrl,
+  );
   let meetingUrl: string | undefined;
+  let guestsInvitedByCalendar = false;
   try {
     const written = await writeBookingToCalendar(hostId, {
       title: poll.title,
       description,
       start,
       end,
-      timezone: poll.host?.timezone ?? "UTC",
+      timezone: hostTz,
       attendees,
       location: createConference ? undefined : locationLabel,
       createConference,
     });
     meetingUrl = written?.meetingUrl;
+    if (written) {
+      guestsInvitedByCalendar = googleEmailsGuests(written.provider);
+      if (booking) {
+        await db.insert(schema.bookingReferences).values({
+          bookingId: booking.id,
+          calendarId: written.calendarId,
+          provider: written.provider,
+          externalEventId: written.externalEventId,
+        });
+      }
+    }
   } catch (err) {
     logger.error("poll finalize calendar write failed", {
       event: "poll_calendar_failed",
@@ -409,13 +482,33 @@ export async function finalizePoll(
       .where(eq(schema.meetingPolls.id, pollId));
   }
 
-  // Confirm the time to the host + everyone who's coming.
-  const appUrl = env.APP_URL;
+  if (booking) {
+    if (meetingUrl) {
+      await db
+        .update(schema.bookings)
+        .set({ meetingUrl })
+        .where(eq(schema.bookings.id, booking.id))
+        .catch(() => {});
+    }
+    // Reminders at the host's preferred lead times, like any booking.
+    await hostBookingPrefs(hostId)
+      .then((p) => scheduleBookingReminders(booking!.id, start, p.reminderOffsets))
+      .catch((err) =>
+        logger.warn("poll booking reminders failed", { event: "poll_reminders_failed", pollId, err }),
+      );
+  }
+
+  // Confirm the time to the host + everyone who's coming. Guests who already got
+  // Google's invite don't get a second (DayOtter) email.
   const recipients = [
     ...(poll.host?.email
       ? [{ email: poll.host.email, name: poll.host.name ?? "you", tz: poll.host.timezone }]
       : []),
-    ...attendees.map((a) => ({ email: a.email, name: a.name, tz: poll.host?.timezone ?? "UTC" })),
+    ...(guestsInvitedByCalendar ? [] : attendees).map((a) => ({
+      email: a.email,
+      name: a.name,
+      tz: hostTz,
+    })),
   ];
   await Promise.all(
     recipients.map((r) =>
@@ -429,7 +522,7 @@ export async function finalizePoll(
           attendeeName: r.name,
           location: locationLabel,
           meetingUrl,
-          manageUrl: `${appUrl}/poll/${poll.token}`,
+          manageUrl,
           message: finalizeMessage,
           // The host locked in the time; everyone who can make it is listed
           // (minus the recipient, so nobody reads "Also attending: yourself").
