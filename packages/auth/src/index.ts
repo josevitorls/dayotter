@@ -6,6 +6,9 @@ import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { bearer, organization, phoneNumber, twoFactor } from "better-auth/plugins";
+import { allowedEmailDomains, isAllowedEmail } from "./allowed-email";
+
+export { allowedEmailDomains, isAllowedEmail };
 
 /**
  * Better Auth server instance - the single source of truth for identity and
@@ -78,6 +81,15 @@ export const auth = betterAuth({
         },
       }
     : undefined,
+  // Cadastro (Google ou e-mail) só para os domínios de ALLOWED_EMAIL_DOMAINS (deploy/.env); recusa vira /nao-autorizado.
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) =>
+          isAllowedEmail(user.email, allowedEmailDomains()) ? undefined : false,
+      },
+    },
+  },
   user: {
     additionalFields: {
       handle: { type: "string", required: false, input: true },

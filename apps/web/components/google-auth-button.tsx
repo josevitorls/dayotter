@@ -15,7 +15,12 @@ export function GoogleAuthButton({ label = "Continue with Google" }: { label?: s
   async function go() {
     setLoading(true);
     track("Google Auth Started");
-    await signIn.social({ provider: "google", callbackURL: "/dashboard" });
+    await signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard",
+      newUserCallbackURL: "/welcome",
+      errorCallbackURL: "/nao-autorizado",
+    });
   }
 
   return (
